@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Votos por escola</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--txt:#1d2430;--mut:#667085;--bd:#e3e6eb;--ac:#1f4e78;--bar:#8fb4d9}
+@media(prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b212a;--txt:#e8ecf2;--mut:#98a2b3;--bd:#2c3440;--ac:#6ea8dc;--bar:#2f5f8c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui,Arial,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 14px 40px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mut);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+label{font-size:13px;color:var(--mut);display:block;margin-bottom:4px}
+select,input[type=search]{width:100%;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--txt);font:inherit}
+.row{display:grid;grid-template-columns:220px 1fr;gap:12px}
+@media(max-width:600px){.row{grid-template-columns:1fr}}
+#lista{margin-top:8px;max-height:260px;overflow:auto}
+#lista button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:8px 10px;border:0;border-bottom:1px solid var(--bd);background:none;color:var(--txt);font:inherit;cursor:pointer}
+#lista button:hover{background:var(--bg)}#lista small{color:var(--mut)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.kpi b{display:block;font-size:22px;color:var(--ac)}.kpi span{font-size:12px;color:var(--mut)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 8px;border-bottom:1px solid var(--bd);text-align:left}
+th{font-size:12px;color:var(--mut);cursor:pointer;user-select:none;white-space:nowrap}
+td.n,th.n{text-align:right}tfoot td{font-weight:700}
+.wrap{overflow-x:auto}
+.bar{position:relative;min-width:90px}.bar i{position:absolute;left:0;top:3px;bottom:3px;background:var(--bar);opacity:.55;border-radius:3px}
+.bar span{position:relative}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.top h2{font-size:16px;margin:0}
+.btn{padding:7px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--txt);font:inherit;cursor:pointer}
+.mut{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Votos por escola</h1>
+  <p class="sub">Escolha o cargo e o candidato para ver a votação por escola. Dados: boletins de urna.</p>
+
+  <div class="card row">
+    <div><label for="cargo">Cargo</label><select id="cargo"></select></div>
+    <div><label for="busca">Candidato (nome ou número)</label>
+      <input id="busca" type="search" placeholder="Digite para buscar..." autocomplete="off">
+      <div id="lista"></div></div>
+  </div>
+
+  <div id="resultado" hidden>
+    <h2 id="titulo" style="font-size:18px;margin:4px 0 10px"></h2>
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <div class="top"><h2>Por escola</h2>
+        <div><label style="display:inline"><input type="checkbox" id="porSecao"> detalhar por seção</label>
+        <button class="btn" id="csv">Baixar CSV</button></div></div>
+      <div class="wrap"><table id="tabela"></table></div>
+    </div>
+  </div>
+  <p class="mut" id="rodape"></p>
+</main>
+
+<script src="dados.js"></script>
+<script>
+const D = window.DADOS;
+const $ = id => document.getElementById(id);
+const norm = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const fmt = n => n.toLocaleString("pt-BR");
+const pct = n => (n * 100).toLocaleString("pt-BR", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + "%";
+let cargo, cand, sort = {k: "votos", d: -1}, linhas = [], linhasSecao = [];
+
+// seções por escola
+const secPorEscola = D.escolas.map(() => 0);
+Object.values(D.secEscola).forEach(i => secPorEscola[i]++);
+
+Object.keys(D.cargos).forEach(c => $("cargo").add(new Option(c, c)));
+$("rodape").textContent = `${Object.keys(D.secEscola).length} seções em ${D.escolas.length} escolas.`;
+
+const total = c => Object.values(c[3]).reduce((a, b) => a + b, 0);
+
+function listar() {
+  const t = norm($("busca").value.trim());
+  const todos = D.cargos[cargo].candidatos.map(c => ({c, t: total(c)})).sort((a, b) => b.t - a.t);
+  const ach = (t ? todos.filter(x => norm(x.c[1]).includes(t) || String(x.c[0]).startsWith(t)) : todos).slice(0, 30);
+  $("lista").innerHTML = "";
+  ach.forEach(({c, t}) => {
+    const b = document.createElement("button");
+    b.innerHTML = `<span>${c[1]} <small>${c[0]}${c[2] ? " · " + c[2].replace(/^\d+ - /, "") : ""}</small></span><b>${fmt(t)}</b>`;
+    b.onclick = () => escolher(c);
+    $("lista").appendChild(b);
+  });
+  if (!ach.length) $("lista").innerHTML = '<p class="mut">Nenhum candidato encontrado.</p>';
+}
+
+function escolher(c) {
+  cand = c;
+  const ap = D.cargos[cargo].apurado;
+  const por = D.escolas.map((e, i) => ({i, nome: e.nome, loc: e.loc, secoes: secPorEscola[i], votos: 0, apurado: 0}));
+  linhasSecao = [];
+  for (const [s, i] of Object.entries(D.secEscola)) {
+    if (!(s in ap)) continue;                        // seção sem boletim
+    const v = c[3][s] || 0;
+    por[i].votos += v; por[i].apurado += ap[s];
+    linhasSecao.push({secao: +s, nome: D.escolas[i].nome, votos: v});
+  }
+  const tot = por.reduce((a, r) => a + r.votos, 0);
+  linhas = por.map(r => ({...r, parte: tot ? r.votos / tot : 0, naEscola: r.apurado ? r.votos / r.apurado : 0}));
+  const apTot = por.reduce((a, r) => a + r.apurado, 0);
+  const topo = [...linhas].sort((a, b) => b.votos - a.votos)[0];
+  $("titulo").textContent = `${cargo}: ${c[1]} (${c[0]})${c[2] ? " - " + c[2].replace(/^\d+ - /, "") : ""}`;
+  $("kpis").innerHTML = [
+    [fmt(tot), "votos no total"],
+    [apTot ? pct(tot / apTot) : "-", "dos votos apurados"],
+    [fmt(linhas.filter(r => r.votos > 0).length), "escolas com voto"],
+    [topo ? topo.nome : "-", `escola mais votada (${topo ? fmt(topo.votos) : 0})`]
+  ].map(([a, b]) => `<div class="kpi"><b style="${a.length > 12 ? "font-size:15px" : ""}">${a}</b><span>${b}</span></div>`).join("");
+  $("resultado").hidden = false;
+  desenhar();
+}
+
+function desenhar() {
+  if ($("porSecao").checked) {
+    const rows = [...linhasSecao].sort((a, b) => b.votos - a.votos || a.secao - b.secao);
+    $("tabela").innerHTML = "<thead><tr><th>Seção</th><th>Escola</th><th class='n'>Votos</th></tr></thead><tbody>" +
+      rows.map(r => `<tr><td>${r.secao}</td><td>${r.nome}</td><td class="n">${fmt(r.votos)}</td></tr>`).join("") + "</tbody>";
+    return;
+  }
+  const k = sort.k, rows = [...linhas].sort((a, b) =>
+    (typeof a[k] === "string" ? a[k].localeCompare(b[k]) : a[k] - b[k]) * sort.d);
+  const max = Math.max(...linhas.map(r => r.votos), 1);
+  const cab = [["nome", "Escola"], ["loc", "Localidade"], ["secoes", "Seções", "n"], ["votos", "Votos", "n"], ["parte", "% do candidato"], ["naEscola", "% na escola", "n"]];
+  $("tabela").innerHTML = "<thead><tr>" + cab.map(([k, t, c]) =>
+    `<th data-k="${k}" class="${c || ""}">${t}${sort.k === k ? (sort.d < 0 ? " ▼" : " ▲") : ""}</th>`).join("") + "</tr></thead><tbody>" +
+    rows.map(r => `<tr><td>${r.nome}</td><td>${r.loc || ""}</td><td class="n">${r.secoes}</td><td class="n">${fmt(r.votos)}</td>
+      <td class="bar"><i style="width:${r.votos / max * 100}%"></i><span>${pct(r.parte)}</span></td><td class="n">${pct(r.naEscola)}</td></tr>`).join("") +
+    `</tbody><tfoot><tr><td>Total</td><td></td><td class="n">${fmt(linhas.reduce((a, r) => a + r.secoes, 0))}</td><td class="n">${fmt(linhas.reduce((a, r) => a + r.votos, 0))}</td><td></td><td></td></tr></tfoot>`;
+  document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
+    const nk = th.dataset.k;
+    sort = {k: nk, d: sort.k === nk ? -sort.d : (nk === "nome" || nk === "loc" ? 1 : -1)};
+    desenhar();
+  });
+}
+
+function baixarCSV() {
+  const q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const por = $("porSecao").checked;
+  const cab = por ? ["Seção", "Escola", "Votos"] : ["Escola", "Localidade", "Seções", "Votos", "% do candidato", "% na escola"];
+  const rows = por ? linhasSecao.map(r => [r.secao, r.nome, r.votos])
+    : linhas.map(r => [r.nome, r.loc || "", r.secoes, r.votos, (r.parte * 100).toFixed(2), (r.naEscola * 100).toFixed(2)]);
+  const csv = "\ufeff" + [cab, ...rows].map(r => r.map(q).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
+  a.download = `votos_${norm(cand[1]).replace(/\W+/g, "_")}${por ? "_secao" : "_escola"}.csv`;
+  a.click();
+}
+
+$("cargo").onchange = () => { cargo = $("cargo").value; $("busca").value = ""; $("resultado").hidden = true; listar(); };
+$("busca").oninput = listar;
+$("porSecao").onchange = desenhar;
+$("csv").onclick = baixarCSV;
+cargo = $("cargo").value; listar();
+</script>
+</body>
+</html>
