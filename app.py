@@ -93,7 +93,8 @@ for n in [x.strip() for x in extras.split(",") if x.strip()]:
 if not numeros:
     st.stop()
 
-t, rotulos = tse.tabela_secoes(df, muni, numeros)
+dfm = tse.completar_locais(df[df["NM_MUNICIPIO"] == muni], Path(__file__).parent)
+t, rotulos = tse.tabela_secoes(dfm, muni, numeros)
 titulo = f"Votos por escola – {muni} – {meta['cargo']} {meta['ano']} ({meta['turno']}º turno)"
 
 st.header("3. Resultado")

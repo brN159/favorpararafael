@@ -133,6 +133,32 @@ def candidatos(df: pd.DataFrame, municipio: str, incluir_brancos_nulos: bool = F
     return g.sort_values("QT_VOTOS", ascending=False).reset_index(drop=True)
 
 
+def completar_locais(df: pd.DataFrame, pasta=".") -> pd.DataFrame:
+    """Preenche nome/endereço do local quando o TSE manda '#NULO#', usando locais_*.csv (por zona e seção)."""
+    ruim = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "#NULO#", "#NE#", "#NULO", "nan"])
+    df = df.copy()
+    chaves = ["NM_MUNICIPIO", "NR_ZONA", "NR_SECAO"]
+    arquivos = sorted(Path(pasta).glob("locais_*.csv"))
+    if arquivos:
+        dp = pd.concat([pd.read_csv(a, sep=";", dtype=str, encoding="utf-8-sig") for a in arquivos])
+        dp["NM_MUNICIPIO"] = dp["NM_MUNICIPIO"].str.strip()
+        dp["NR_ZONA"] = pd.to_numeric(dp["NR_ZONA"]).astype(int)
+        dp["NR_SECAO"] = pd.to_numeric(dp["NR_SECAO"]).astype(int)
+        dp = dp.rename(columns={"NM_LOCAL_VOTACAO": "_nome", "DS_LOCAL_VOTACAO_ENDERECO": "_end"})
+        dp = dp[chaves + ["_nome", "_end"]].drop_duplicates(chaves)
+        df = df.merge(dp, on=chaves, how="left")
+        m = ruim(df["NM_LOCAL_VOTACAO"]) & df["_nome"].notna()
+        df.loc[m, "NM_LOCAL_VOTACAO"] = df.loc[m, "_nome"]
+        m = ruim(df["DS_LOCAL_VOTACAO_ENDERECO"]) & df["_end"].notna()
+        df.loc[m, "DS_LOCAL_VOTACAO_ENDERECO"] = df.loc[m, "_end"]
+        df = df.drop(columns=["_nome", "_end"])
+    m = ruim(df["NM_LOCAL_VOTACAO"])
+    df.loc[m, "NM_LOCAL_VOTACAO"] = "Local " + df.loc[m, "NR_LOCAL_VOTACAO"].astype(str)
+    m = ruim(df["DS_LOCAL_VOTACAO_ENDERECO"])
+    df.loc[m, "DS_LOCAL_VOTACAO_ENDERECO"] = ""
+    return df
+
+
 def tabela_secoes(df: pd.DataFrame, municipio: str, numeros: list[str]):
     sub = df[df["NM_MUNICIPIO"] == municipio]
     base = (sub[BASE].drop_duplicates(["NR_ZONA", "NR_SECAO"])
